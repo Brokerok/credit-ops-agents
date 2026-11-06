@@ -44,7 +44,7 @@ class ExtractedApplication(BaseModel):
 class PolicyCitation(BaseModel):
     doc: str
     section: str
-    quote: str = Field(max_length=400)
+    quote: str = Field(max_length=600)
 
 
 class RuleResult(BaseModel):
@@ -58,9 +58,9 @@ class RiskAssessment(BaseModel):
 
     estimated_vehicle_value_uah: int = Field(ge=0)
     ltv_percent: float = Field(ge=0, description="requested_amount / estimated_vehicle_value * 100")
-    rule_results: list[RuleResult]
+    rule_results: list[RuleResult] = Field(default_factory=list, description="Filled by the policy engine")
     recommendation: Literal["approve", "review", "decline"]
-    rationale: str = Field(max_length=800)
+    rationale: str = Field(max_length=1500)
     citations: list[PolicyCitation] = Field(default_factory=list)
 
 

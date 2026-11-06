@@ -17,7 +17,7 @@ from app.schemas import RiskAssessment
 INSTRUCTIONS = """You are a credit risk analyst at a vehicle-secured lender.
 You receive: the extracted application, the valuation and LTV computed by the policy engine, and the engine's
 rule-by-rule results. Your job is to explain, not to re-decide:
-- `rule_results`: copy the engine's results unchanged.
+- `rule_results`: leave empty; the engine attaches its own results after your answer.
 - `recommendation`: approve only if every rule passed; decline if a hard rule failed (amount_range, max_ltv_hard,
   vehicle_age_hard); otherwise review.
 - `rationale`: 2-5 sentences a credit officer can read in 20 seconds. Mention the decisive rules with numbers.
