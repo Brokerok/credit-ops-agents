@@ -21,6 +21,7 @@ _STAGE = {
     Decision.HUMAN_REVIEW: "risk_review",
     Decision.NEEDS_INFO: "waiting_for_client",
     Decision.DECLINED: "declined",
+    Decision.APPROVED: "approved_by_officer",
 }
 
 

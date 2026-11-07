@@ -17,6 +17,7 @@ dependencies = [
     "pypdf>=5.0",
     "structlog>=24.4",
     "httpx>=0.27",
+    "langgraph>=1.2",
 ]
 
 [project.optional-dependencies]

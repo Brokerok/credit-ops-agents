@@ -16,6 +16,7 @@ e-mail / PDF ──▶ intake agent ──▶ policy engine ──▶ risk agent
 | Requirement | Where |
 |---|---|
 | Multi-agent pipeline with typed hand-offs, retries, exception routing | `app/orchestrator.py`, `app/schemas.py` |
+| Same pipeline as a **LangGraph** state graph: conditional routing, checkpointer, `interrupt` for **human-in-the-loop**, resume via API | `app/graph.py`, `POST /runs/{id}/review` |
 | Agents built with **Pydantic AI** (tools, structured output, deps injection) | `app/agents/` |
 | **RAG** over internal policy with **role-based access** enforced in the store query | `app/rag/`, `app/policy/*.md` (front matter `roles:`) |
 | PostgreSQL + **pgvector** in prod, in-memory index for dev/tests | `app/rag/store.py`, `docker-compose.yml` |
@@ -60,7 +61,8 @@ Response (abridged):
 }
 ```
 
-Other endpoints: `POST /applications/upload` (.txt / .pdf), `GET /runs`, `GET /runs/{id}`, `POST /policy/reindex`, `GET /health`.
+Other endpoints: `POST /applications/upload` (.txt / .pdf), `GET /runs`, `GET /runs/{id}`, `POST /runs/{id}/review`
+(credit officer's verdict for a paused run, LangGraph mode), `POST /policy/reindex`, `GET /health`.
 
 ### PostgreSQL + pgvector
 
@@ -74,7 +76,7 @@ docker compose up --build
 ### Tests and lint
 
 ```bash
-make test   # 14 tests, fully offline: TestModel + hash embedder + SQLite
+make test   # 20 tests, fully offline: TestModel + hash embedder + SQLite
 make lint
 ```
 
@@ -86,6 +88,15 @@ income ≥ 2× payment, auto-approve cap 300 000 UAH) lives in `app/rules.py` an
 if its recommendation disagrees with the engine, the run is flagged `llm_disagreement` for the reviewer instead
 of being overridden. This is what "boundary of autonomy" means in a lending process: the agent can route and
 request information, it cannot change a limit or promise terms (CP-7).
+
+**Two orchestrators, one contract.** `ORCHESTRATOR=native` runs the linear pipeline in `app/orchestrator.py`;
+`ORCHESTRATOR=langgraph` runs the same steps as a LangGraph `StateGraph` (`app/graph.py`): nodes `intake → policy →
+explain → crm`, conditional edges (`needs_info` skips the explainer, a model error ends the run as `human_review`), and a
+`human_review` node that calls `interrupt()`. With a checkpointer the run pauses there, `GET /runs/{id}` shows
+`waiting_review`, and `POST /runs/{id}/review {"decision": "approve"|"decline"}` resumes it with `Command(resume=…)`
+using `run_id` as the thread id; the officer's verdict lands in the CRM stage and the audit log. The agents are the same
+Pydantic AI agents in both modes: the graph is orchestration, not a second agent stack. The in-memory checkpointer is
+for the demo; in production it would be `langgraph-checkpoint-postgres` on the same database as the CRM tables.
 
 **Role-aware retrieval.** Policy documents declare who may read them (`roles: [risk, legal]`). The filter is
 applied inside the vector query (`WHERE :role = ANY(roles)` in pgvector, pre-filter in the memory store), so a
@@ -123,7 +134,8 @@ sink. Secrets are read from the environment only; `.env` is git-ignored.
 ```
 app/
   api.py             FastAPI endpoints
-  orchestrator.py    pipeline, retries, audit, CRM hand-off
+  orchestrator.py    linear pipeline, retries, audit, CRM hand-off (+ steps shared with graph.py)
+  graph.py           LangGraph variant: state graph, routing, interrupt/resume for human review
   rules.py           deterministic policy engine (mirrors app/policy/*.md)
   schemas.py         typed contracts between steps
   models_registry.py provider-agnostic model factory + price table

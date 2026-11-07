@@ -22,9 +22,48 @@ from app.db import Run, audit, get_engine
 from app.logging import get_logger
 from app.models_registry import ModelProfile, build_model
 from app.rag.retriever import PolicyRetriever
-from app.schemas import Decision, ExtractedApplication, PipelineResult, RiskAssessment
+from app.schemas import Decision, ExtractedApplication, PipelineResult, RiskAssessment, RuleResult
 
 log = get_logger("pipeline")
+
+
+# --- steps shared by both orchestrators (this linear one and the LangGraph one in app/graph.py) ---
+
+
+def retrieve_policy_context(retriever: PolicyRetriever, rule_results: list[RuleResult], role: str) -> str:
+    """Pre-retrieve the policy sections behind each rule verdict (for models without reliable tool calling)."""
+    hits = []
+    for rr in rule_results:
+        hits.extend(retriever.search(rr.detail, role=role, k=1))
+    seen, uniq = set(), []
+    for h in hits:
+        if h.chunk.section not in seen:
+            seen.add(h.chunk.section)
+            uniq.append(h)
+    return "\n\nPOLICY CONTEXT:\n" + retriever.format_context(uniq)
+
+
+def build_risk_prompt(
+    extracted: ExtractedApplication, value: int, ltv: float, rule_results: list[RuleResult], context: str
+) -> str:
+    return (
+        f"APPLICATION:\n{extracted.model_dump_json(indent=1)}\n\n"
+        f"ENGINE: estimated_vehicle_value_uah={value}, ltv_percent={ltv}\n"
+        f"RULE RESULTS:\n"
+        + "\n".join(f"- {x.rule}: {'PASS' if x.passed else 'FAIL'} — {x.detail}" for x in rule_results)
+        + context
+    )
+
+
+def reconcile_risk(
+    risk: RiskAssessment, value: int, ltv: float, rule_results: list[RuleResult], decision: Decision
+) -> str | None:
+    """Engine numbers overwrite the model's; a recommendation that contradicts the engine is reported, not obeyed."""
+    risk.estimated_vehicle_value_uah, risk.ltv_percent, risk.rule_results = value, ltv, rule_results
+    expected = {Decision.AUTO_APPROVED: "approve", Decision.DECLINED: "decline"}.get(decision, "review")
+    if risk.recommendation != expected:
+        return f"llm_disagreement: model said {risk.recommendation}, engine decided {decision}"
+    return None
 
 
 class Pipeline:
@@ -66,31 +105,15 @@ class Pipeline:
             # 3. risk agent explains + cites policy (pre-retrieved context for local models)
             context = ""
             if not self.profile.native_tools:
-                hits = []
-                for rr in rule_results:
-                    hits.extend(self.retriever.search(rr.detail, role=deps.role, k=1))
-                seen, uniq = set(), []
-                for h in hits:
-                    if h.chunk.section not in seen:
-                        seen.add(h.chunk.section)
-                        uniq.append(h)
-                context = "\n\nPOLICY CONTEXT:\n" + self.retriever.format_context(uniq)
-            prompt = (
-                f"APPLICATION:\n{extracted.model_dump_json(indent=1)}\n\n"
-                f"ENGINE: estimated_vehicle_value_uah={value}, ltv_percent={ltv}\n"
-                f"RULE RESULTS:\n"
-                + "\n".join(f"- {x.rule}: {'PASS' if x.passed else 'FAIL'} — {x.detail}" for x in rule_results)
-                + context
-            )
-            r2 = await self.risk.run(prompt, deps=deps)
+                context = retrieve_policy_context(self.retriever, rule_results, deps.role)
+            r2 = await self.risk.run(build_risk_prompt(extracted, value, ltv, rule_results, context), deps=deps)
             risk = r2.output
             usage_in += r2.usage.input_tokens or 0
             usage_out += r2.usage.output_tokens or 0
             # engine is the authority: enforce its numbers and note any disagreement for the reviewer
-            risk.estimated_vehicle_value_uah, risk.ltv_percent, risk.rule_results = value, ltv, rule_results
-            expected = {Decision.AUTO_APPROVED: "approve", Decision.DECLINED: "decline"}.get(decision, "review")
-            if risk.recommendation != expected:
-                errors.append(f"llm_disagreement: model said {risk.recommendation}, engine decided {decision}")
+            disagreement = reconcile_risk(risk, value, ltv, rule_results, decision)
+            if disagreement:
+                errors.append(disagreement)
 
             # 4. CRM
             with Session(engine) as session:
@@ -144,9 +167,15 @@ _pipeline: Pipeline | None = None
 
 
 def get_pipeline() -> Pipeline:
+    """ORCHESTRATOR=native -> this linear pipeline; langgraph -> app.graph.GraphPipeline (same contract)."""
     global _pipeline
     if _pipeline is None:
-        _pipeline = Pipeline()
+        if settings.orchestrator == "langgraph":
+            from app.graph import GraphPipeline
+
+            _pipeline = GraphPipeline()  # type: ignore[assignment]
+        else:
+            _pipeline = Pipeline()
     return _pipeline
 
 

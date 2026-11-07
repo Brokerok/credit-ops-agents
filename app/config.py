@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -24,6 +26,8 @@ class Settings(BaseSettings):
         default="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", alias="EMBEDDING_MODEL"
     )
     policy_dir: str = Field(default="app/policy", alias="POLICY_DIR")
+    # "native" = linear pipeline in app/orchestrator.py; "langgraph" = state graph with human-in-the-loop (app/graph.py)
+    orchestrator: Literal["native", "langgraph"] = Field(default="native", alias="ORCHESTRATOR")
 
     # Guardrails
     max_agent_retries: int = Field(default=2, alias="MAX_AGENT_RETRIES")

@@ -69,6 +69,14 @@ class Decision(StrEnum):
     HUMAN_REVIEW = "human_review"
     DECLINED = "declined"
     NEEDS_INFO = "needs_info"
+    APPROVED = "approved"  # set only by a human reviewer resuming a paused run (never by the engine)
+
+
+class ReviewIn(BaseModel):
+    """A credit officer's verdict that resumes a run paused for human review."""
+
+    decision: Literal["approve", "decline"]
+    comment: str = Field(default="", max_length=1000)
 
 
 class PipelineResult(BaseModel):

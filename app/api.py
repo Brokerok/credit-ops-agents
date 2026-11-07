@@ -13,7 +13,7 @@ from app.config import settings
 from app.db import Run, get_engine, list_runs
 from app.logging import configure_logging
 from app.orchestrator import get_pipeline
-from app.schemas import PipelineResult, RunRecord
+from app.schemas import PipelineResult, ReviewIn, RunRecord
 
 configure_logging(json=settings.log_json)
 app = FastAPI(
@@ -66,6 +66,18 @@ def run_detail(run_id: str) -> RunRecord:
         if not r:
             raise HTTPException(404, "run not found")
         return _to_record(r)
+
+
+@app.post("/runs/{run_id}/review", response_model=PipelineResult)
+async def review_run(run_id: str, body: ReviewIn) -> PipelineResult:
+    """Credit officer's verdict for a run paused at human review (ORCHESTRATOR=langgraph only)."""
+    p = get_pipeline()
+    if not hasattr(p, "resume"):
+        raise HTTPException(409, "human-in-the-loop resume needs ORCHESTRATOR=langgraph")
+    try:
+        return await p.resume(run_id, body.model_dump())
+    except ValueError as e:
+        raise HTTPException(409, str(e)) from e
 
 
 @app.post("/policy/reindex")
