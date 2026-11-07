@@ -1,7 +1,7 @@
 # credit-ops-agents
 
 [![CI](https://github.com/Brokerok/credit-ops-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/Brokerok/credit-ops-agents/actions/workflows/ci.yml)
-[![Live demo](https://img.shields.io/badge/live%20demo-try%20it-1a4a7a)](LIVE_DEMO_URL)
+[![Deploy to Render](https://img.shields.io/badge/deploy-Render%20free%20tier-46e3b7)](https://render.com/deploy?repo=https://github.com/Brokerok/credit-ops-agents)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
 [![Pydantic AI](https://img.shields.io/badge/agents-Pydantic%20AI-e92063)](https://ai.pydantic.dev/)
 [![LangGraph](https://img.shields.io/badge/orchestration-LangGraph-1c3c3c)](https://langchain-ai.github.io/langgraph/)
@@ -20,8 +20,9 @@ e-mail / PDF ──▶ intake agent ──▶ policy engine ──▶ risk agent
 
 ## Live demo
 
-**[LIVE_DEMO_URL](LIVE_DEMO_URL)** — paste an application (EN or UK), watch it go through intake → policy → explanation,
-and approve or decline a run that paused for human review. The hosted demo runs `LLM_MODEL=demo:scripted`: a regex
+Run it locally in one command (below) or deploy it with the Render button above; the UI at `/` lets you paste an
+application (EN or UK), watch it go through intake → policy → explanation, and approve or decline a run that paused
+for human review. The hosted demo runs `LLM_MODEL=demo:scripted`: a regex
 intake and a templated explainer stand in for the LLM so the demo needs no API key and no GPU. Everything else — policy
 engine, LangGraph routing and interrupt, CRM hand-off, audit log, cost accounting — is the real code path. Point
 `LLM_MODEL` at `anthropic:…`, `openai:…` or `ollama:…` and the same UI runs on a real model.
