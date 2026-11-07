@@ -1,8 +1,8 @@
 """One place that knows how to build a model from a spec string and what it costs.
 
 Spec format: "<provider>:<model_name>", e.g. "anthropic:claude-sonnet-4-5", "openai:gpt-4.1-mini",
-"ollama:llama3.1:8b", "test:test". The rest of the code never imports provider SDKs directly, so swapping
-models is a config change, and the eval harness can compare several in one run.
+"ollama:llama3.1:8b", "demo:scripted", "test:test". The rest of the code never imports provider SDKs directly,
+so swapping models is a config change, and the eval harness can compare several in one run.
 """
 
 from __future__ import annotations
@@ -66,6 +66,11 @@ def build_model(spec: str | None = None) -> ModelProfile:
         from pydantic_ai.models.test import TestModel
 
         model = TestModel()
+        tools = False
+    elif provider == "demo":
+        from app.demo_model import build_demo_model
+
+        model = build_demo_model()  # scripted, no LLM: for the public demo and smoke tests without keys
         tools = False
     else:
         raise ValueError(f"unknown model provider in spec {spec!r}")

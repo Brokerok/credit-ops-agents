@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import Run, get_engine, list_runs
 from app.logging import configure_logging
+from app.observability import setup_tracing
 from app.orchestrator import get_pipeline
 from app.schemas import PipelineResult, ReviewIn, RunRecord
 
@@ -21,6 +24,8 @@ app = FastAPI(
     version="0.1.0",
     description="Agentic intake and risk pre-screening for vehicle-secured loans",
 )
+setup_tracing(app)
+_INDEX = Path(__file__).with_name("static") / "index.html"
 
 
 class ApplicationIn(BaseModel):
@@ -28,10 +33,21 @@ class ApplicationIn(BaseModel):
     source: str = "api"
 
 
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def index() -> str:
+    return _INDEX.read_text(encoding="utf-8")
+
+
 @app.get("/health")
 def health() -> dict:
     p = get_pipeline()
-    return {"status": "ok", "model": p.profile.spec, "vector_backend": p.retriever.backend}
+    return {
+        "status": "ok",
+        "model": p.profile.spec,
+        "orchestrator": settings.orchestrator,
+        "vector_backend": p.retriever.backend,
+        "tracing": bool(settings.logfire_token),
+    }
 
 
 @app.post("/applications", response_model=PipelineResult)

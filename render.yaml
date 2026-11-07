@@ -1,0 +1,20 @@
+# One-click deploy on Render (free tier): https://render.com/deploy?repo=https://github.com/Brokerok/credit-ops-agents
+services:
+  - type: web
+    name: credit-ops-agents
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: LLM_MODEL
+        value: demo:scripted
+      - key: ORCHESTRATOR
+        value: langgraph
+      - key: EMBEDDING_MODEL
+        value: hash
+      - key: DATABASE_URL
+        value: sqlite:////tmp/credit_ops.db
+      - key: ENVIRONMENT
+        value: demo
+      - key: LOGFIRE_TOKEN
+        sync: false

@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     auto_approve_max_amount_uah: int = Field(default=300_000, alias="AUTO_APPROVE_MAX_AMOUNT_UAH")
     crm_webhook_url: str | None = Field(default=None, alias="CRM_WEBHOOK_URL")
     log_json: bool = Field(default=False, alias="LOG_JSON")
+    # Tracing: set LOGFIRE_TOKEN to export traces (agents, graph, HTTP, SQL) to Pydantic Logfire; unset = off
+    logfire_token: str | None = Field(default=None, alias="LOGFIRE_TOKEN")
+    environment: str = Field(default="dev", alias="ENVIRONMENT")
 
 
 settings = Settings()

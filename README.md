@@ -1,5 +1,12 @@
 # credit-ops-agents
 
+[![CI](https://github.com/Brokerok/credit-ops-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/Brokerok/credit-ops-agents/actions/workflows/ci.yml)
+[![Live demo](https://img.shields.io/badge/live%20demo-try%20it-1a4a7a)](LIVE_DEMO_URL)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
+[![Pydantic AI](https://img.shields.io/badge/agents-Pydantic%20AI-e92063)](https://ai.pydantic.dev/)
+[![LangGraph](https://img.shields.io/badge/orchestration-LangGraph-1c3c3c)](https://langchain-ai.github.io/langgraph/)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://docs.astral.sh/ruff/)
+
 Agentic intake and risk pre-screening for **vehicle-secured consumer loans**: an applicant's e-mail, chat
 transcript or PDF goes in; a structured application, a policy-checked decision, a CRM lead and an audit trail
 come out. Built to show how LLM agents fit inside a regulated lending workflow without being allowed to
@@ -10,6 +17,14 @@ e-mail / PDF ──▶ intake agent ──▶ policy engine ──▶ risk agent
                  (LLM, extract)   (code, decide)   (LLM, explain   (code)       (DB, webhook)
                                                     + cite policy)
 ```
+
+## Live demo
+
+**[LIVE_DEMO_URL](LIVE_DEMO_URL)** — paste an application (EN or UK), watch it go through intake → policy → explanation,
+and approve or decline a run that paused for human review. The hosted demo runs `LLM_MODEL=demo:scripted`: a regex
+intake and a templated explainer stand in for the LLM so the demo needs no API key and no GPU. Everything else — policy
+engine, LangGraph routing and interrupt, CRM hand-off, audit log, cost accounting — is the real code path. Point
+`LLM_MODEL` at `anthropic:…`, `openai:…` or `ollama:…` and the same UI runs on a real model.
 
 ## What it demonstrates
 
@@ -26,6 +41,8 @@ e-mail / PDF ──▶ intake agent ──▶ policy engine ──▶ risk agent
 | **Evaluation harness**: decision accuracy, extraction accuracy, latency, tokens, cost per model | `eval/run_eval.py`, `eval/golden.jsonl` |
 | FastAPI service, CRM adapter with idempotent upsert + webhook retry, audit log | `app/api.py`, `app/crm.py`, `app/db.py` |
 | Structured logs with **PII masking**, secrets only from env | `app/logging.py`, `app/config.py` |
+| **Tracing** with Pydantic Logfire / OpenTelemetry: request → graph node → agent run → model call → SQL, on by env var | `app/observability.py` |
+| Scripted **demo mode** (no key, no GPU) that exercises the full pipeline; one-click deploy | `app/demo_model.py`, `Dockerfile`, `render.yaml` |
 | Offline test-suite (pydantic-ai `TestModel`, hash embedder), CI, Docker | `tests/`, `.github/workflows/ci.yml` |
 
 ## Quick start
@@ -73,10 +90,19 @@ DATABASE_URL=postgresql+psycopg://credit:credit@127.0.0.1:5433/credit_ops .venv/
 docker compose up --build
 ```
 
+### Deploy the demo
+
+```bash
+docker build -t credit-ops-agents . && docker run -p 8000:8000 credit-ops-agents   # demo mode by default
+```
+
+`render.yaml` deploys the same image on Render's free tier; a Hugging Face Space with the Docker SDK works with the
+same Dockerfile (it listens on `$PORT`, 7860 on Spaces). Set `LOGFIRE_TOKEN` there to get traces of the demo traffic.
+
 ### Tests and lint
 
 ```bash
-make test   # 20 tests, fully offline: TestModel + hash embedder + SQLite
+make test   # 24 tests, fully offline: TestModel + hash embedder + SQLite
 make lint
 ```
 
@@ -124,6 +150,12 @@ What I would expect from this comparison in production, and why the pipeline is 
 
 Results of a local run are in [`eval/results.md`](eval/results.md).
 
+**Observability.** `LOGFIRE_TOKEN=…` turns on Pydantic Logfire: `instrument_pydantic_ai()` records every agent run
+with prompt, structured output, retries and token usage; `instrument_fastapi()` and `instrument_sqlalchemy()` wrap
+the request and the SQL around it, so one run is one trace from HTTP to database. Logfire speaks OpenTelemetry, so
+the same spans can go to Langfuse, Tempo or Honeycomb by adding a span processor. Without the token nothing is
+imported and the service stays as light as in CI.
+
 **Operational hygiene.** Every run is persisted with status, decision and the full result; every step writes an
 audit event; model errors and unexpected exceptions become `human_review` runs with an `errors` list, never a
 500. Logs are structured (JSON in Docker) and phone numbers / e-mails are masked before they reach the log
@@ -136,6 +168,9 @@ app/
   api.py             FastAPI endpoints
   orchestrator.py    linear pipeline, retries, audit, CRM hand-off (+ steps shared with graph.py)
   graph.py           LangGraph variant: state graph, routing, interrupt/resume for human review
+  demo_model.py      scripted stand-in for the LLM (regex intake + templated explainer) for the public demo
+  observability.py   Logfire / OpenTelemetry tracing, enabled by LOGFIRE_TOKEN
+  static/index.html  demo UI served at /
   rules.py           deterministic policy engine (mirrors app/policy/*.md)
   schemas.py         typed contracts between steps
   models_registry.py provider-agnostic model factory + price table

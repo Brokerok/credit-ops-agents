@@ -35,6 +35,7 @@ _BASE_VALUE_UAH = {
     "vaz": 120_000,
     "zaz": 100_000,
 }
+KNOWN_MAKES = tuple(_BASE_VALUE_UAH)  # lower-case brand names the valuation stub knows
 _DEFAULT_VALUE_UAH = 500_000
 
 HARD_DECLINE = {"amount_range", "max_ltv_hard", "vehicle_age_hard", "salvage"}
@@ -142,10 +143,14 @@ def evaluate(app: ExtractedApplication, today: date | None = None) -> tuple[list
 def decide(app: ExtractedApplication, rules: list[RuleResult]) -> Decision:
     """CP-6/CP-7 decision authority, in code so the LLM cannot talk its way around it."""
     failed = {x.rule for x in rules if not x.passed}
+    # Missing critical facts come first: a hard rule computed from a placeholder value is not a decline,
+    # it is a question to the applicant (the schema forces e.g. a year, so an absent one is still "a number").
+    missing = set(app.missing_fields) & CRITICAL_FIELDS
+    if missing:
+        return Decision.NEEDS_INFO
     if failed & HARD_DECLINE:
         return Decision.DECLINED
-    missing = set(app.missing_fields) & CRITICAL_FIELDS
-    if missing or app.vehicle.has_title is not True or app.applicant.monthly_income_uah is None:
+    if app.vehicle.has_title is not True or app.applicant.monthly_income_uah is None:
         return Decision.NEEDS_INFO
     if not failed and app.requested_amount_uah <= settings.auto_approve_max_amount_uah:
         return Decision.AUTO_APPROVED

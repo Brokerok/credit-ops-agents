@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>credit-ops-agents demo</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1c2430; --muted:#5b6672; --line:#dfe3e8; --accent:#1a4a7a; --ok:#1b7f4b; --warn:#b06a00; --bad:#b3261e; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#12161b; --card:#1b2129; --ink:#e7ebf0; --muted:#9aa5b1; --line:#2c3440; --accent:#7fb3e8; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font: 15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } .sub { color: var(--muted); margin: 0 0 20px; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; } @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  textarea { width:100%; min-height: 200px; border:1px solid var(--line); border-radius:8px; padding:10px; font: 14px/1.45 ui-monospace, Menlo, monospace; background:transparent; color:var(--ink); }
+  button { border:0; border-radius:8px; padding:10px 14px; font-weight:600; cursor:pointer; background:var(--accent); color:#fff; }
+  button.secondary { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; }
+  .pill { display:inline-block; padding:2px 10px; border-radius:999px; font-weight:700; font-size:13px; }
+  .auto_approved,.approved { background:#e3f5ea; color:var(--ok); } .human_review,.needs_info { background:#fff1dc; color:var(--warn); } .declined { background:#fde7e5; color:var(--bad); }
+  pre { margin:0; white-space:pre-wrap; word-break:break-word; font: 12.5px/1.45 ui-monospace, Menlo, monospace; max-height: 520px; overflow:auto; }
+  .flow { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 0; } .flow span { border:1px solid var(--line); border-radius:6px; padding:2px 8px; font-size:12.5px; color:var(--muted); }
+  .flow span.on { border-color: var(--accent); color: var(--ink); }
+  .muted { color:var(--muted); font-size: 13px; }
+  a { color: var(--accent); }
+  .rule { display:flex; gap:8px; font-size:13.5px; } .rule b { min-width: 150px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>credit-ops-agents</h1>
+  <p class="sub">Vehicle-secured loan application → intake agent → policy engine → risk agent → decision → CRM + audit.
+    <span id="mode" class="muted"></span> · <a href="/docs">API docs</a> · <a href="https://github.com/Brokerok/credit-ops-agents">source</a></p>
+
+  <div class="grid">
+    <section class="card">
+      <label for="text"><b>Application</b> <span class="muted">(e-mail or chat text, EN or UK)</span></label>
+      <textarea id="text"></textarea>
+      <div class="row">
+        <button id="send">Run pipeline</button>
+        <button class="secondary" data-sample="ok">Sample: auto-approve</button>
+        <button class="secondary" data-sample="review">Sample: human review</button>
+        <button class="secondary" data-sample="info">Sample: missing data</button>
+        <button class="secondary" data-sample="uk">Зразок: українською</button>
+      </div>
+      <div class="flow" id="flow">
+        <span data-n="intake">intake</span><span data-n="policy">policy</span><span data-n="explain">explain</span>
+        <span data-n="human_review">human review</span><span data-n="crm">crm</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row" style="margin-top:0"><b>Decision</b> <span id="decision" class="pill"></span> <span id="meta" class="muted"></span></div>
+      <div id="rules" style="margin-top:10px"></div>
+      <p id="rationale" style="margin:10px 0 0"></p>
+      <div id="review" class="row" hidden>
+        <span class="muted">Paused for a credit officer:</span>
+        <button id="approve">Approve</button>
+        <button id="decline" class="secondary">Decline</button>
+      </div>
+      <details style="margin-top:12px"><summary class="muted">Raw response</summary><pre id="raw"></pre></details>
+    </section>
+  </div>
+</main>
+<script>
+const SAMPLES = {
+  ok: "Hello, my name is Olena Kovalenko, phone +380 67 123 45 67, Kyiv. I would like to borrow 150,000 UAH for 12 months. The car is a Toyota Camry 2019, about 95,000 km, I own it and have the registration certificate. My salary is 48,000 UAH per month.",
+  review: "Hi, my name is Andrii Melnyk, phone +380 50 222 33 44, Lviv. I need 500,000 UAH for 12 months. Car: Toyota Camry 2019, 95,000 km, I have the registration. My income is 48,000 UAH per month.",
+  info: "Hello, I am Ivan. I want to borrow 200,000 UAH against my Skoda Octavia. Call me back please.",
+  uk: "Добрий день, мене звати Олена Коваленко, телефон +380 67 123 45 67, Київ. Хочу взяти кредит 150000 грн на 12 місяців. Авто Toyota Camry 2019 року, пробіг 95000 км, техпаспорт на мене. Зарплата 48000 грн на місяць."
+};
+const $ = (id) => document.getElementById(id);
+let runId = null;
+document.querySelectorAll("[data-sample]").forEach(b => b.onclick = () => { $("text").value = SAMPLES[b.dataset.sample]; });
+$("text").value = SAMPLES.ok;
+fetch("/health").then(r => r.json()).then(h => { $("mode").textContent = `model: ${h.model} · orchestrator: ${h.orchestrator}`; }).catch(() => {});
+
+function show(res) {
+  $("raw").textContent = JSON.stringify(res, null, 2);
+  $("decision").textContent = res.decision; $("decision").className = "pill " + res.decision;
+  $("meta").textContent = `${res.latency_ms} ms · ${res.input_tokens + res.output_tokens} tokens · $${res.cost_usd}` + (res.crm_lead_id ? " · CRM lead created" : "");
+  const rules = (res.risk && res.risk.rule_results) || [];
+  $("rules").innerHTML = rules.map(r => `<div class="rule"><b>${r.passed ? "✅" : "❌"} ${r.rule}</b><span>${r.detail}</span></div>`).join("")
+    || (res.extracted && res.extracted.missing_fields.length ? `<div class="muted">Missing: ${res.extracted.missing_fields.join(", ")}</div>` : "");
+  $("rationale").textContent = (res.risk && res.risk.rationale) || (res.errors.length ? res.errors.join("; ") : "");
+  const paused = res.decision === "human_review" && !res.crm_lead_id && !res.errors.length;
+  $("review").hidden = !paused; runId = paused ? res.run_id : null;
+  const on = ["intake", "policy"].concat(res.risk ? ["explain"] : [], paused ? ["human_review"] : [], res.crm_lead_id ? ["crm"] : []);
+  document.querySelectorAll("#flow span").forEach(s => s.classList.toggle("on", on.includes(s.dataset.n)));
+}
+$("send").onclick = async () => {
+  $("send").disabled = true; $("decision").textContent = "…";
+  try {
+    const r = await fetch("/applications", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: $("text").value, source: "demo-ui" }) });
+    show(await r.json());
+  } finally { $("send").disabled = false; }
+};
+for (const d of ["approve", "decline"]) $(d).onclick = async () => {
+  const r = await fetch(`/runs/${runId}/review`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision: d, comment: "via demo UI" }) });
+  show(await r.json());
+};
+</script>
+</body>
+</html>
